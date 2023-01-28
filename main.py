@@ -4,20 +4,33 @@ import math
 import torch
 import torch.nn as nn
 import torch.onnx
+import sys
 
 import data
 from utils import get_device, repackage_hidden, make_reproducible
 from rnnlm import RNNModel
 
 
-def init_glove_embeddings(model: RNNModel, glove_path):
+def init_glove_embeddings(model: RNNModel, glove_path, vocab: data.Vocabulary):
     # TODO: implement this function
-    raise NotImplementedError
+    glove_embed_dic = {}
+    with open(glove_path) as inFile:
+        for line in inFile.readlines():
+            line = line.strip().split()
+            if line[0] in vocab.type2index:
+                glove_embed_dic[line[0]] = [float(val) for val in line[1:]]
+    embedding = torch.empty_like(model.in_embedder)
+    for idx, tok in enumerate(vocab.type2index.keys()):
+        if tok in glove_embed_dic:
+            embedding[idx] = torch.tensor(glove_embed_dic[tok])
+        else:
+            embedding[idx] = torch.rand(model.in_embedder.size(0))
+    model.in_embedder = embedding
+
 
 
 def compute_perplexity(loss: float):
-    # TODO: implement this function
-    raise NotImplementedError
+    return math.exp(loss)
 
 
 def parse_args():
@@ -55,6 +68,15 @@ def parse_args():
     )
     parser.add_argument(
         "--save", type=str, default="model.pt", help="path to save the final model"
+    )
+    parser.add_argument(
+        "--rnn_type", type=str, default="elman", help="rnn model type - elman/gru/lstm"
+    )
+    parser.add_argument(
+        "--pre_trained", type=str, default=None, help="path of pre-trained glove embedding"
+    )
+    parser.add_argument(
+        "--transfer_learning", type=bool, default=False, help="Train Pre-trained embedding Flag"
     )
     return parser.parse_args()
 
@@ -131,9 +153,10 @@ def train_model_step(corpus, args, model, criterion, epoch, lr):
         loss = criterion(output, targets)
         loss.backward()
 
+        params_to_update = [p for p in model.parameters() if p.requires_grad == True]
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        for p in model.parameters():
+        torch.nn.utils.clip_grad_norm_(params_to_update, args.clip)
+        for p in params_to_update:
             p.data.add_(p.grad, alpha=-lr)
 
         total_loss += loss.item()
@@ -205,10 +228,12 @@ def test_model(corpus, args, model, criterion):  # Load the best saved model.
         )
     )
     print("=" * 89)
+    return test_loss
 
 
 if __name__ == "__main__":
     args = parse_args()
+    print(f"Training {args.rnn_type}")
     make_reproducible(args.seed)
     device = get_device()
     corpus = data.Corpus(args.data)
@@ -217,9 +242,14 @@ if __name__ == "__main__":
     test_data = batchify(corpus.test, eval_batch_size)
 
     ntokens = len(corpus.vocab)
-    model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers, args.dropout).to(
+    model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.rnn_type).to(
         device
     )
+    if args.pre_trained is not None:
+        init_glove_embeddings(model, args.pre_trained, corpus.vocab)
+    if args.transfer_learning:
+        model.in_embedder.weight.requires_grad = True
+    
     criterion = nn.NLLLoss()
     train_model(corpus, args, model, criterion)
-    test_model(corpus, args, model, criterion)
+    test_loss = test_model(corpus, args, model, criterion)
