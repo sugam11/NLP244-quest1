@@ -12,20 +12,19 @@ from rnnlm import RNNModel
 
 
 def init_glove_embeddings(model: RNNModel, glove_path, vocab: data.Vocabulary):
-    # TODO: implement this function
     glove_embed_dic = {}
     with open(glove_path) as inFile:
         for line in inFile.readlines():
             line = line.strip().split()
             if line[0] in vocab.type2index:
                 glove_embed_dic[line[0]] = [float(val) for val in line[1:]]
-    embedding = torch.empty_like(model.in_embedder)
-    for idx, tok in enumerate(vocab.type2index.keys()):
+    embedding = torch.empty_like(model.in_embedder.weight)
+    for idx, tok in enumerate(vocab.idx2type):
         if tok in glove_embed_dic:
             embedding[idx] = torch.tensor(glove_embed_dic[tok])
         else:
-            embedding[idx] = torch.rand(model.in_embedder.size(0))
-    model.in_embedder = embedding
+            embedding[idx] = torch.rand(model.in_embedder.weight.size(-1))
+    model.in_embedder = nn.Embedding.from_pretrained(embedding)
 
 
 
@@ -78,6 +77,7 @@ def parse_args():
     parser.add_argument(
         "--transfer_learning", type=bool, default=False, help="Train Pre-trained embedding Flag"
     )
+    parser.add_argument("--bi_direction", type=bool, default=False)
     return parser.parse_args()
 
 
@@ -242,13 +242,14 @@ if __name__ == "__main__":
     test_data = batchify(corpus.test, eval_batch_size)
 
     ntokens = len(corpus.vocab)
-    model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.rnn_type).to(
-        device
-    )
+    model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers,
+                     args.dropout, args.rnn_type, args.bi_direction).to(device)
     if args.pre_trained is not None:
         init_glove_embeddings(model, args.pre_trained, corpus.vocab)
+        print(f"Model Embedding weights trainable: {model.in_embedder.weight.requires_grad}")
     if args.transfer_learning:
         model.in_embedder.weight.requires_grad = True
+        print(f"Model Embedding weights trainable: {model.in_embedder.weight.requires_grad}")
     
     criterion = nn.NLLLoss()
     train_model(corpus, args, model, criterion)
