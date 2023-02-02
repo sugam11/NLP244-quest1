@@ -5,6 +5,9 @@ import os
 
 
 def get_device():
+    """
+    Get the device to run the model on.
+    """
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -15,7 +18,9 @@ def get_device():
 
 
 def repackage_hidden(h):
-    """Wraps hidden states in new Tensors, to detach them from their history."""
+    """
+    Wraps hidden states in new Tensors, to detach them from their history.
+    """
     if isinstance(h, torch.Tensor):
         return h.detach()
     else:
@@ -24,7 +29,7 @@ def repackage_hidden(h):
 
 def make_reproducible(seed:int = 42) -> None:
     """
-    Set random seed in a bunch of libraries.
+    Make the code reproducible by setting the seed for all random number generators.
     """
     torch.manual_seed(seed)
     if torch.cuda.is_available():

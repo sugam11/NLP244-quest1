@@ -143,6 +143,7 @@ def train_model_step(corpus, args, model, criterion, epoch, lr):
     start_time = time.time()
     ntokens = len(corpus.vocab)
     hidden = model.init_hidden(args.batch_size)
+    params_to_update = [p for p in model.parameters() if p.requires_grad == True]
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.seq_len)):
         data, targets = get_batch(train_data, i)
         # Starting each batch, we detach the hidden state from how it was previously produced.
@@ -152,8 +153,7 @@ def train_model_step(corpus, args, model, criterion, epoch, lr):
         output, hidden = model(data, hidden)
         loss = criterion(output, targets)
         loss.backward()
-
-        params_to_update = [p for p in model.parameters() if p.requires_grad == True]
+        
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(params_to_update, args.clip)
         for p in params_to_update:
